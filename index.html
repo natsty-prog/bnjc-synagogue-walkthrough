@@ -227,178 +227,164 @@ const W = 16, D = 22, H = 7.2;
 // ── FLOOR ─────────────────────────────────────────
 mesh(new THREE.PlaneGeometry(W, D), M.floor, root, [0,0,0], [-Math.PI/2,0,0]).receiveShadow = true;
 
-// ── CEILING (triangulated wood lattice look) ──────
-const ceil = mesh(new THREE.PlaneGeometry(W, D), M.wood, root, [0,H,0], [Math.PI/2,0,0]);
-ceil.castShadow = false;
-// diagonal beams for the triangulated-ceiling look
-for (let i = -7; i <= 7; i++) {
-  mesh(new THREE.BoxGeometry(.12, .12, D*1.42), M.woodDk, root, [i*1.05, H-.08, 0], [0, Math.PI/4, 0]);
-  mesh(new THREE.BoxGeometry(.12, .12, D*1.42), M.woodDk, root, [i*1.05, H-.08, 0], [0, -Math.PI/4, 0]);
+// ── CEILING — diamond pyramid coffers (the distinctive "egg-crate" look in the photos) ──
+const ceilGroup = new THREE.Group();
+ceilGroup.position.set(0, H, 0);
+root.add(ceilGroup);
+{
+  const cell = 0.62;
+  const nx = Math.ceil(W/cell), nz = Math.ceil(D/cell);
+  const pyrGeo = new THREE.ConeGeometry(cell*0.74, 0.42, 4, 1);
+  const pyrMesh = new THREE.InstancedMesh(pyrGeo, M.wood, nx*nz);
+  pyrMesh.castShadow = false; pyrMesh.receiveShadow = false;
+  const dummy = new THREE.Object3D();
+  let i = 0;
+  for (let ix = 0; ix < nx; ix++) {
+    for (let iz = 0; iz < nz; iz++) {
+      const x = -W/2 + cell/2 + ix*cell;
+      const z = -D/2 + cell/2 + iz*cell;
+      dummy.position.set(x, -0.18, z);
+      dummy.rotation.set(Math.PI, Math.PI/4, 0);
+      dummy.updateMatrix();
+      pyrMesh.setMatrixAt(i++, dummy.matrix);
+    }
+  }
+  pyrMesh.instanceMatrix.needsUpdate = true;
+  ceilGroup.add(pyrMesh);
+  // flat cap above the pyramids so there's no gap when viewed from below at an angle
+  mesh(new THREE.PlaneGeometry(W, D), M.woodDk, ceilGroup, [0, 0.05, 0], [Math.PI/2,0,0]);
 }
 
 // ── WALLS ─────────────────────────────────────────
-// Back wall (Ark wall, -Z)
+// Ark wall (-Z, short end) — plain cream with a dark recessed niche for the Ark
 mesh(new THREE.PlaneGeometry(W, H), M.wallCream, root, [0, H/2, -D/2], [0,0,0]);
-// Front wall (entrance, +Z) — leave a gap implicitly (we just don't block movement)
+// Entrance wall (+Z, short end)
 mesh(new THREE.PlaneGeometry(W, H), M.wallCream, root, [0, H/2, D/2], [0,Math.PI,0]);
-// Left wall (dark tiled, -X) — matches the dark tiled wall in the photo
-mesh(new THREE.PlaneGeometry(D, H), M.wallCream, root, [-W/2, H/2, 0], [0,Math.PI/2,0]);
-for (let z = -D/2+1; z < 4; z += 1.1) {
-  for (let y = 1; y < 6.2; y += 1.05) {
-    mesh(new THREE.BoxGeometry(.04,1.0,1.0), M.arkTile, root, [-W/2+.05, y, z]);
+
+// Side walls (long sides, ±X) — light oak panelling with a row of tall narrow windows
+function buildSideWall(xSide) {
+  const g = new THREE.Group();
+  root.add(g);
+  mesh(new THREE.PlaneGeometry(D, H), M.wood, g, [xSide*W/2, H/2, 0], [0,-xSide*Math.PI/2,0]);
+  for (let z = -D/2+2.0; z < D/2-1.2; z += 1.9) {
+    mesh(new THREE.BoxGeometry(.06, H-2.1, 1.15), M.glass, g, [xSide*(W/2-.05), H/2+0.3, z]);
+    mesh(new THREE.BoxGeometry(.05, H-2.1, .05), M.frame, g, [xSide*(W/2-.05), H/2+0.3, z-.6]);
   }
+  mesh(new THREE.BoxGeometry(.05, H-2.1, .05), M.frame, g, [xSide*(W/2-.05), H/2+0.3, D/2-1.25]);
+  mesh(new THREE.BoxGeometry(.06, .08, D-2.2), M.frame, g, [xSide*(W/2-.05), H-0.85, 0]);
+  mesh(new THREE.BoxGeometry(.06, .08, D-2.2), M.frame, g, [xSide*(W/2-.05), 1.25, 0]);
 }
-// Right wall — glazed curtain wall (large windows) toward garden,
-// with a light timber diagonal cross-brace truss visible OUTSIDE the glass (as in the photo)
-const winWallGroup = new THREE.Group();
-root.add(winWallGroup);
-mesh(new THREE.PlaneGeometry(D, H), M.wallCream, winWallGroup, [W/2, H/2, 0], [0,-Math.PI/2,0]);
-const trussMat = new THREE.MeshStandardMaterial({ color:0xcdbb96, roughness:.6, metalness:.05 });
-for (let z = -D/2+1.6; z < D/2-1; z += 2.0) {
-  mesh(new THREE.BoxGeometry(.08, H-1.0, 1.5), M.glass, winWallGroup, [W/2-.05, H/2, z]);
-  mesh(new THREE.BoxGeometry(.06, H-1.0, .05), M.frame, winWallGroup, [W/2-.05, H/2, z-.75]);
-}
-mesh(new THREE.BoxGeometry(.06, H-1.0, .05), M.frame, winWallGroup, [W/2-.05, H/2, D/2-1.05]);
-// diagonal cross-bracing seen through the glass, set back outside the building line
-for (let z = -D/2+2.5; z < D/2-1; z += 3.0) {
-  mesh(new THREE.BoxGeometry(.1,.1,3.4), trussMat, winWallGroup, [W/2+.7, H-1.4, z], [0,Math.PI/4,0]);
-  mesh(new THREE.BoxGeometry(.1,.1,3.4), trussMat, winWallGroup, [W/2+.7, H-1.4, z], [0,-Math.PI/4,0]);
-}
+buildSideWall(-1);
+buildSideWall(1);
 
-// ── ARK (Aron HaKodesh) — dark tiled mosaic wall behind light wood slatted sliding doors ──
-const bimah = mesh(new THREE.BoxGeometry(7.4, .35, 3.6), M.woodPale, root, [0, .175, -D/2+3.2]);
-mesh(new THREE.BoxGeometry(7.6, .06, 3.8), M.woodDk, root, [0, .38, -D/2+3.2]);
-mesh(new THREE.BoxGeometry(7.6, .35, .15), M.woodDk, root, [0, .175, -D/2+1.45]); // step riser
-for (let s = 0; s < 3; s++) {
-  mesh(new THREE.BoxGeometry(7.8-s*.3, .12, .35), M.floor, root, [0, .06+s*.12, -D/2+1.4-s*.35]);
-}
-
-// dark navy mosaic tile feature wall (full height, behind everything)
-const tileWallGroup = new THREE.Group();
-tileWallGroup.position.set(0, 0, -D/2+0.35);
-root.add(tileWallGroup);
-for (let x = -3.6; x <= 3.6; x += 0.32) {
-  for (let y = 0.3; y <= 6.6; y += 0.32) {
-    mesh(new THREE.BoxGeometry(.28,.28,.05), M.arkTile, tileWallGroup, [x, y, 0]);
-  }
-}
-
-// Ark cabinet: light wood frame with vertical slatted sliding doors (matches photo)
+// ── ARK (Aron HaKodesh) — recessed niche with vertical black ribbed screen, as in the photos ──
+const nicheGroup = new THREE.Group();
+nicheGroup.position.set(0, 0, -D/2+1.5);
+root.add(nicheGroup);
+// niche side returns + soffit (gives the recessed alcove look)
+mesh(new THREE.BoxGeometry(.12, 4.4, 3.0), M.wallCream, nicheGroup, [-2.55, 2.2, 1.5]);
+mesh(new THREE.BoxGeometry(.12, 4.4, 3.0), M.wallCream, nicheGroup, [2.55, 2.2, 1.5]);
+mesh(new THREE.BoxGeometry(5.1, .15, 3.0), M.wallCream, nicheGroup, [0, 4.4, 1.5]);
+// black vertical ribbed Ark screen filling the niche back
 const arkGroup = new THREE.Group();
-arkGroup.position.set(0, .35, -D/2+0.85);
-root.add(arkGroup);
+arkGroup.position.set(0, 0, 0);
+nicheGroup.add(arkGroup);
 arkGroup.userData.info = 'ark';
-// frame
-mesh(new THREE.BoxGeometry(4.8,4.0,.18), M.woodDk, arkGroup, [0,2.0,-.05]);
-arkGroup.children[arkGroup.children.length-1].userData.info = 'ark';
-// vertical wood slats forming the two sliding doors
-for (let x = -2.25; x <= 2.25; x += 0.20) {
-  const slat = mesh(new THREE.BoxGeometry(.14,3.7,.16), M.woodPale, arkGroup, [x, 1.95, .05]);
+mesh(new THREE.BoxGeometry(5.3, 4.5, .15), M.woodDk, arkGroup, [0, 2.25, -.05]);
+for (let x = -2.45; x <= 2.45; x += 0.16) {
+  const slat = mesh(new THREE.BoxGeometry(.10, 4.2, .14), M.arkDark, arkGroup, [x, 2.2, .04]);
   slat.userData.info = 'ark';
 }
-// top and bottom rails
-mesh(new THREE.BoxGeometry(4.9,.18,.22), M.woodDk, arkGroup, [0,3.85,.06]);
-mesh(new THREE.BoxGeometry(4.9,.18,.22), M.woodDk, arkGroup, [0,.10,.06]);
+// step platform leading up to the ark / bimah area
+for (let s = 0; s < 3; s++) {
+  mesh(new THREE.BoxGeometry(7.6-s*.4, .12, .4), M.floor, root, [0, .06+s*.12, -D/2+1.9-s*.4]);
+}
 
-// ── BIMAH LECTERN (reading table with blue cover) ─
-const lectern = mesh(new THREE.BoxGeometry(2.0,.9,.9), M.woodDk, root, [0,.45+.35,-D/2+4.6]);
-lectern.userData.info = 'bimah';
-mesh(new THREE.BoxGeometry(2.1,.08,1.0), M.blue, root, [0,.9+.35,-D/2+4.6]);
+// ── BIMAH (raised reading platform, center, light oak with fluted pedestal box) ──
+const bimahPlatform = mesh(new THREE.BoxGeometry(4.6, .3, 3.4), M.woodPale, root, [0, .15, -D/2+5.0]);
+bimahPlatform.userData.info = 'bimah';
 
-// ── SLATTED WOOD PEDESTAL COLUMNS (vertical-slat cylinders w/ ball finials, as in photo) ──
-function slatColumn(x, z, h=1.05, r=.16) {
-  const g = new THREE.Group();
-  g.position.set(x, .35, z);
-  root.add(g);
+function flutedBox(x, z, w=.9, h=1.0, d=.9) {
+  const g = new THREE.Group(); g.position.set(x, .3, z); root.add(g);
   g.userData.info = 'column';
-  const n = 14;
+  mesh(new THREE.BoxGeometry(w, h, d), M.woodDk, g, [0, h/2, 0]);
+  const n = Math.round(w*16);
   for (let i = 0; i < n; i++) {
-    const a = (i/n) * Math.PI * 2;
-    const slat = mesh(new THREE.BoxGeometry(.05, h, .06), M.woodPale, g,
-      [r*Math.cos(a), h/2, r*Math.sin(a)]);
-    slat.lookAt(new THREE.Vector3(0, h/2, 0).add(g.position));
+    const fx = -w/2 + (i+0.5)*(w/n);
+    const slat = mesh(new THREE.BoxGeometry(w/n*0.55, h*0.96, .03), M.woodPale, g, [fx, h/2, d/2+.01]);
     slat.userData.info = 'column';
   }
-  mesh(new THREE.SphereGeometry(r*1.15, 14, 14), M.woodPale, g, [0, h+r*0.4, 0]);
+  return g;
 }
-[[-2.7,-D/2+2.0],[2.7,-D/2+2.0],[-2.7,-D/2+4.4],[2.7,-D/2+4.4]].forEach(([x,z]) => slatColumn(x,z));
+flutedBox(0, -D/2+5.3, 1.5, 1.05, 1.0);
+flutedBox(-1.0, -D/2+4.5, .55, .9, .55);
 
-// round blue ottoman / pouffe
-const ottoman = mesh(new THREE.CylinderGeometry(.42,.42,.45,24), M.blue, root, [1.4,.225,-D/2+5.3]);
-ottoman.userData.info = 'pew';
-mesh(new THREE.CylinderGeometry(.43,.43,.06,24), M.blue, root, [1.4,.45,-D/2+5.3]);
+// reading table with the blue draped cloth + papers
+const lectern = mesh(new THREE.BoxGeometry(1.6,.06,1.0), M.woodDk, root, [0,1.05,-D/2+5.3]);
+lectern.userData.info = 'bimah';
+mesh(new THREE.BoxGeometry(1.65,.05,1.05), M.blue, root, [0,1.12,-D/2+5.3]);
+mesh(new THREE.BoxGeometry(.5,.02,.36), M.wallCream, root, [-.2,1.16,-D/2+5.2]);
 
-// ── READING DESK (amud, with the round-finial posts, lower center) ──
+// reading desk / amud — two posts with round finials
 const amudGroup = new THREE.Group();
-amudGroup.position.set(-1.6, 0, -D/2+8.0);
+amudGroup.position.set(0, 0, -D/2+6.7);
 root.add(amudGroup);
 amudGroup.userData.info = 'amud';
-mesh(new THREE.BoxGeometry(.18,1.05,.18), M.woodDk, amudGroup, [-.5,.52,0]);
-mesh(new THREE.BoxGeometry(.18,1.05,.18), M.woodDk, amudGroup, [.5,.52,0]);
-mesh(new THREE.SphereGeometry(.09,10,10), M.woodDk, amudGroup, [-.5,1.08,0]);
-mesh(new THREE.SphereGeometry(.09,10,10), M.woodDk, amudGroup, [.5,1.08,0]);
-mesh(new THREE.BoxGeometry(1.3,.6,.5), M.woodDk, amudGroup, [0,1.05,.25],[-.35,0,0]);
-mesh(new THREE.BoxGeometry(1.2,.05,.42), M.arkDark, amudGroup, [0,1.18,.3],[-.35,0,0]);
+mesh(new THREE.BoxGeometry(.16,1.0,.16), M.woodDk, amudGroup, [-.45,.5,0]);
+mesh(new THREE.BoxGeometry(.16,1.0,.16), M.woodDk, amudGroup, [.45,.5,0]);
+mesh(new THREE.SphereGeometry(.085,12,12), M.woodDk, amudGroup, [-.45,1.04,0]);
+mesh(new THREE.SphereGeometry(.085,12,12), M.woodDk, amudGroup, [.45,1.04,0]);
 
-// small dark lectern with brass studs (the black stand with dots seen in photo)
+// black memorial / music-stand panel with small studs (the "dots" board on a stand)
 const standGroup = new THREE.Group();
-standGroup.position.set(-2.8, 0, -D/2+7.3);
+standGroup.position.set(-1.6, 0, -D/2+5.9);
 root.add(standGroup);
 standGroup.userData.info = 'standDots';
-mesh(new THREE.BoxGeometry(.5,1.0,.5), M.wood, standGroup, [0,.5,0]);
-const standFace = mesh(new THREE.BoxGeometry(1.0,.85,.06), M.arkDark, standGroup, [0,1.1,.3], [-.5,0,0]);
+mesh(new THREE.CylinderGeometry(.04,.04,1.3,8), M.frame, standGroup, [0,.65,0]);
+mesh(new THREE.CylinderGeometry(.3,.3,.03,16), M.frame, standGroup, [0,.02,0]);
+const standFace = mesh(new THREE.BoxGeometry(.95,.75,.04), M.arkDark, standGroup, [0,1.25,.05], [-.3,0,0]);
 standFace.userData.info = 'standDots';
-for (let r = 0; r < 6; r++) for (let c = 0; c < 8; c++) {
-  mesh(new THREE.CylinderGeometry(.025,.025,.02,8), M.metal,
-    standGroup, [-.42+c*.12, 1.42-r*.12, .335], [Math.PI/2-.5,0,0]);
+for (let r = 0; r < 7; r++) for (let c = 0; c < 9; c++) {
+  mesh(new THREE.CylinderGeometry(.018,.018,.015,8), M.white,
+    standGroup, [-.4+c*.1, 1.55-r*.1, .07+r*.012], [Math.PI/2-.3,0,0]);
 }
 
-// ── PEWS (rows of wooden benches with blue cushions) ──
-function buildPewRow(z, count, startX, gap) {
-  for (let i = 0; i < count; i++) {
-    const x = startX + i*gap;
-    const g = new THREE.Group();
-    g.position.set(x, 0, z);
-    root.add(g);
-    const seat = mesh(new THREE.BoxGeometry(1.7,.12,.55), M.pewWood, g, [0,.5,0]);
-    seat.userData.info = 'pew';
-    mesh(new THREE.BoxGeometry(1.6,.06,.5), M.blue, g, [0,.57,0]);
-    mesh(new THREE.BoxGeometry(1.7,.7,.08), M.pewWood, g, [0,.85,-.27]);
-    [-.78,.78].forEach(lx => mesh(new THREE.BoxGeometry(.08,.5,.55), M.pewWood, g, [lx,.25,0]));
-  }
+// ── PEWS — symmetric blocks either side of a center aisle, facing the bimah ──
+function buildPew(x, z, rotY=0) {
+  const g = new THREE.Group();
+  g.position.set(x, 0, z); g.rotation.y = rotY;
+  root.add(g);
+  const seat = mesh(new THREE.BoxGeometry(1.8,.10,.55), M.pewWood, g, [0,.48,0]);
+  seat.userData.info = 'pew';
+  mesh(new THREE.BoxGeometry(1.7,.05,.5), M.blue, g, [0,.535,0]);
+  mesh(new THREE.BoxGeometry(1.8,.62,.07), M.pewWood, g, [0,.79,-.27]);
+  [-.83,.83].forEach(lx => mesh(new THREE.BoxGeometry(.07,.48,.55), M.pewWood, g, [lx,.24,0]));
 }
-// right-side pews facing the bimah (rows going back toward entrance)
-for (let r = 0; r < 5; r++) {
-  buildPewRow(-D/2 + 9.5 + r*1.5, 4, 1.6, 1.85);
-}
-// left small pews (near the reading desk, perpendicular feel kept simple)
-for (let r = 0; r < 3; r++) {
-  buildPewRow(-D/2 + 9.5 + r*1.5, 2, -5.6, 1.85);
+const aisleGap = 1.1;
+for (let r = 0; r < 6; r++) {
+  const z = -D/2 + 8.2 + r*1.45;
+  buildPew(-(aisleGap/2 + 1.0), z);
+  buildPew(-(aisleGap/2 + 2.9), z);
+  buildPew( (aisleGap/2 + 1.0), z);
+  buildPew( (aisleGap/2 + 2.9), z);
 }
 
-// ── ARMCHAIRS / single seats near bimah (low wooden chairs) ──
-[[-3.2,-D/2+5.6],[3.2,-D/2+5.6],[-1.0,-D/2+6.2]].forEach(([x,z]) => {
-  const g = new THREE.Group(); g.position.set(x,0,z); root.add(g);
-  mesh(new THREE.BoxGeometry(.55,.5,.55), M.pewWood, g, [0,.27,0]);
-  mesh(new THREE.BoxGeometry(.5,.05,.5), M.blue, g, [0,.5,0]);
-  mesh(new THREE.BoxGeometry(.55,.6,.08), M.pewWood, g, [0,.78,-.24]);
-});
-
-// ── LIBRARY / BOOKSHELVES (right side, near entrance) ─
-const shelfGroup = new THREE.Group();
-shelfGroup.position.set(W/2-.6, 0, D/2-5);
-root.add(shelfGroup);
-shelfGroup.userData.info = 'library';
-for (let s = 0; s < 4; s++) {
-  const shelfZ = s*1.6 - 2.4;
-  mesh(new THREE.BoxGeometry(.9,5.2,1.5), M.wood, shelfGroup, [0,2.6,shelfZ]);
+// ── LIBRARY / BOOKSHELVES — built into both side walls near the Ark end ──
+function buildShelf(xSide) {
+  const g = new THREE.Group();
+  g.position.set(xSide*(W/2-.55), 0, -D/2+2.6);
+  root.add(g);
+  g.userData.info = 'library';
+  mesh(new THREE.BoxGeometry(.85,4.6,2.6), M.wood, g, [0,2.3,0]);
   for (let lvl = 0; lvl < 5; lvl++) {
-    for (let b = 0; b < 10; b++) {
-      mesh(new THREE.BoxGeometry(.08,.5,.12), M.bookSpine, shelfGroup,
-        [-.35, 0.6+lvl*0.9, shelfZ - .6 + b*.13]);
+    for (let b = 0; b < 16; b++) {
+      mesh(new THREE.BoxGeometry(.07,.45,.11), M.bookSpine, g,
+        [xSide*.36, 0.55+lvl*0.85, -1.15 + b*.155]);
     }
   }
 }
+buildShelf(-1);
+buildShelf(1);
 
 // ── EXIT SIGN ──────────────────────────────────────
 const exitMat = new THREE.MeshStandardMaterial({ color:0x0a3d0a, emissive:new THREE.Color(0x16c916), roughness:.4 });
