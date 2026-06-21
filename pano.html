@@ -4,13 +4,18 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>BNJC Synagogue — 360° Panorama</title>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js"
+  }
+}
+</script>
 <style>
   *{margin:0;padding:0;box-sizing:border-box}
   html,body{height:100%;overflow:hidden;background:#0d1118;font-family:'Segoe UI',sans-serif;color:#f1ede4}
-  #stage{position:fixed;inset:0;overflow:hidden;cursor:grab;background:#0d1118}
-  #stage.dragging{cursor:grabbing}
-  #track{position:absolute;top:50%;left:50%;display:flex;will-change:transform}
-  #track img{height:100%;display:block;user-select:none;-webkit-user-drag:none;pointer-events:none}
+  canvas{display:block;cursor:grab}
+  canvas.dragging{cursor:grabbing}
 
   #ui{position:fixed;top:0;left:0;right:0;display:flex;justify-content:space-between;
       align-items:flex-start;padding:16px 22px;pointer-events:none;z-index:20}
@@ -18,10 +23,10 @@
   h1{font-size:1.2rem;font-weight:800;color:#fff;text-shadow:0 2px 14px rgba(0,0,0,.8)}
   .sub{font-size:.72rem;color:#e7dcc0;margin-top:4px;text-shadow:0 1px 8px rgba(0,0,0,.8)}
 
-  .hotspot{position:absolute;top:0;left:0;width:26px;height:26px;border-radius:50%;
+  .hotspot{position:absolute;width:26px;height:26px;border-radius:50%;
            background:rgba(201,168,92,.85);border:2px solid #fff;cursor:pointer;
            box-shadow:0 0 0 0 rgba(201,168,92,.7);animation:pulse 2.2s infinite;z-index:14;
-           pointer-events:auto}
+           transform:translate(-50%,-50%)}
   @keyframes pulse{
     0%{box-shadow:0 0 0 0 rgba(201,168,92,.55)}
     70%{box-shadow:0 0 0 14px rgba(201,168,92,0)}
@@ -33,10 +38,6 @@
        padding:12px 15px;pointer-events:none;opacity:0;transition:opacity .2s}
   #tip h3{color:#e8d4a0;font-size:.85rem;margin-bottom:6px}
   #tip p{color:#c4bba6;font-size:.76rem;line-height:1.55}
-
-  #edgeL,#edgeR{position:fixed;top:0;bottom:0;width:90px;z-index:18;pointer-events:none}
-  #edgeL{left:0;background:linear-gradient(90deg,#0d1118,transparent)}
-  #edgeR{right:0;background:linear-gradient(-90deg,#0d1118,transparent)}
 
   #dragHint{position:fixed;bottom:26px;left:50%;transform:translateX(-50%);
             background:rgba(10,10,8,.6);border:1px solid rgba(255,255,255,.25);
@@ -57,31 +58,101 @@
 <div id="ui">
   <div>
     <h1>🕍 BNJC Synagogue — 360° Panorama</h1>
-    <p class="sub">Real stitched panorama photograph · drag to look around the room</p>
+    <p class="sub">Real stitched panorama photograph · drag to rotate · scroll to zoom</p>
   </div>
 </div>
 
-<div id="stage">
-  <div id="track">
-    <img id="panoImg" src="photos/pano.png" draggable="false">
-  </div>
-</div>
-<div id="edgeL"></div>
-<div id="edgeR"></div>
-<div id="dragHint">🖱️ Drag left / right to look around the room</div>
+<div id="hotspotLayer" style="position:fixed;inset:0;z-index:14;pointer-events:none"></div>
+<div id="dragHint">🖱️ Drag to rotate the view · scroll to zoom</div>
 <div id="tip"><h3 id="tTitle"></h3><p id="tDesc"></p></div>
 
-<script>
-// hotspot positions as % of the ORIGINAL panorama image (1916x821)
+<script type="module">
+import * as THREE from 'three';
+
+// ── This panorama spans roughly the angle captured by a handheld sweep —
+// we map it onto the inside of a cylinder so dragging gives genuine
+// perspective-correct rotation (not a flat slide), with real depth at the edges.
+const PANO_ANGLE_DEG = 210; // approximate horizontal field of view of the capture
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(innerWidth, innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0d1118);
+
+const camera = new THREE.PerspectiveCamera(75, innerWidth/innerHeight, 0.1, 100);
+camera.rotation.order = 'YXZ';
+
+const loader = new THREE.TextureLoader();
+let cylRadius = 8;
+let thetaLengthRad = PANO_ANGLE_DEG * Math.PI / 180;
+
+loader.load('photos/pano.png', (tex) => {
+  tex.colorSpace = THREE.SRGBColorSpace;
+  const aspect = tex.image.width / tex.image.height;
+
+  // height of the cylinder chosen so vertical FOV looks natural given the
+  // photo's aspect ratio and the angular width we're mapping it across
+  const arcLength = cylRadius * thetaLengthRad;
+  const cylHeight = arcLength / aspect;
+
+  const geo = new THREE.CylinderGeometry(
+    cylRadius, cylRadius, cylHeight, 96, 1, true,
+    -thetaLengthRad/2, thetaLengthRad
+  );
+  const mat = new THREE.MeshBasicMaterial({ map: tex, side: THREE.BackSide });
+  const mesh = new THREE.Mesh(geo, mat);
+  scene.add(mesh);
+
+  window.__panoHeight = cylHeight;
+  window.__panoLoaded = true;
+  const l = document.getElementById('loading');
+  l.style.opacity = '0';
+  setTimeout(() => l.remove(), 500);
+  placeHotspots();
+});
+
+// ── DRAG TO ROTATE (yaw/pitch) + WHEEL TO ZOOM (FOV) ──
+let dragging = false, lastX = 0, lastY = 0;
+const PITCH_LIMIT = Math.PI * 0.32;
+const YAW_LIMIT = thetaLengthRad/2 - 0.45; // stay clear of the cylinder's open edges
+
+renderer.domElement.addEventListener('pointerdown', e => {
+  dragging = true;
+  renderer.domElement.classList.add('dragging');
+  lastX = e.clientX; lastY = e.clientY;
+  document.getElementById('dragHint').style.opacity = '0';
+});
+addEventListener('pointermove', e => {
+  if (!dragging) return;
+  const dx = e.clientX - lastX, dy = e.clientY - lastY;
+  lastX = e.clientX; lastY = e.clientY;
+  camera.rotation.y = Math.max(-YAW_LIMIT, Math.min(YAW_LIMIT, camera.rotation.y + dx * 0.0028));
+  camera.rotation.x = Math.max(-PITCH_LIMIT, Math.min(PITCH_LIMIT, camera.rotation.x + dy * 0.0028));
+  placeHotspots();
+});
+addEventListener('pointerup', () => { dragging = false; renderer.domElement.classList.remove('dragging'); });
+
+renderer.domElement.addEventListener('wheel', e => {
+  e.preventDefault();
+  camera.fov = Math.max(35, Math.min(95, camera.fov + e.deltaY * 0.03));
+  camera.updateProjectionMatrix();
+  placeHotspots();
+}, { passive: false });
+
+// ── HOTSPOTS (positioned by yaw/pitch angle within the panorama, projected to screen) ──
 const HOTSPOTS = [
-  { x:11, y:42, key:'ark' },
-  { x:18, y:50, key:'bimah' },
-  { x:21, y:54, key:'standDots' },
-  { x:3,  y:38, key:'library' },
-  { x:95, y:38, key:'library' },
-  { x:80, y:58, key:'pew' },
-  { x:36, y:11, key:'ceiling' },
-  { x:55, y:38, key:'windows' },
+  { yaw: -0.62, pitch: 0.05, key: 'ark' },
+  { yaw: -0.38, pitch: 0.10, key: 'bimah' },
+  { yaw: -0.30, pitch: 0.16, key: 'standDots' },
+  { yaw: -0.92, pitch: -0.02, key: 'library' },
+  { yaw:  0.92, pitch: -0.02, key: 'library' },
+  { yaw:  0.45, pitch: 0.04, key: 'pew' },
+  { yaw: -0.05, pitch: -0.32, key: 'ceiling' },
+  { yaw:  0.10, pitch: 0.02, key: 'windows' },
 ];
 
 const INFO = {
@@ -94,50 +165,47 @@ const INFO = {
   windows:   { t:'Garden-facing Windows', d:'A row of full-height windows looking out onto the garden, with a light timber cross-braced screen outside.' },
 };
 
-const stage = document.getElementById('stage');
-const track = document.getElementById('track');
-const img = document.getElementById('panoImg');
+const hotspotLayer = document.getElementById('hotspotLayer');
 const tip = document.getElementById('tip');
 const tTitle = document.getElementById('tTitle');
 const tDesc = document.getElementById('tDesc');
+const hsEls = [];
 
-let imgW = 0, imgH = 0;
-let scaledH = 0, scaledW = 0;
-let pan = { x: 0 };
-let dragging = false, dragStartX = 0, panStartX = 0, dragMoved = false;
-
-function layout() {
-  scaledH = innerHeight * 1.0;
-  scaledW = scaledH * (imgW / imgH);
-  img.style.height = scaledH + 'px';
-  clampPan();
-  render();
-  placeHotspots();
+function buildHotspotEls() {
+  HOTSPOTS.forEach((hs, i) => {
+    const el = document.createElement('div');
+    el.className = 'hotspot';
+    el.style.pointerEvents = 'auto';
+    el.addEventListener('mouseenter', e => showTip(e, hs.key));
+    el.addEventListener('mousemove', e => showTip(e, hs.key));
+    el.addEventListener('mouseleave', hideTip);
+    hotspotLayer.appendChild(el);
+    hsEls.push(el);
+  });
 }
-
-function clampPan() {
-  const maxPan = Math.max(0, (scaledW - innerWidth) / 2 + innerWidth * 0.18);
-  pan.x = Math.max(-maxPan, Math.min(maxPan, pan.x));
-}
-
-function render() {
-  track.style.transform = `translate(calc(-50% + ${pan.x}px), -50%)`;
-}
+buildHotspotEls();
 
 function placeHotspots() {
-  document.querySelectorAll('.hotspot').forEach(el => el.remove());
-  HOTSPOTS.forEach(hs => {
-    const h = document.createElement('div');
-    h.className = 'hotspot';
-    const px = (hs.x/100) * scaledW - scaledW/2;
-    const py = (hs.y/100) * scaledH - scaledH/2;
-    h.style.left = (px) + 'px';
-    h.style.top = (py) + 'px';
-    h.style.transform = 'translate(-50%,-50%)';
-    h.addEventListener('mouseenter', e => showTip(e, hs.key));
-    h.addEventListener('mousemove', e => showTip(e, hs.key));
-    h.addEventListener('mouseleave', hideTip);
-    track.appendChild(h);
+  HOTSPOTS.forEach((hs, i) => {
+    // world point in the direction of (yaw, pitch) at fixed radius
+    const dir = new THREE.Vector3(
+      -Math.sin(hs.yaw) * Math.cos(hs.pitch),
+      Math.sin(hs.pitch),
+      -Math.cos(hs.yaw) * Math.cos(hs.pitch)
+    ).multiplyScalar(cylRadius * 0.95);
+
+    const projected = dir.clone().project(camera);
+    const el = hsEls[i];
+    if (projected.z > 1 || projected.z < -1) { el.style.display = 'none'; return; }
+    const sx = (projected.x * 0.5 + 0.5) * innerWidth;
+    const sy = (-projected.y * 0.5 + 0.5) * innerHeight;
+    if (sx < -50 || sx > innerWidth+50 || sy < -50 || sy > innerHeight+50) {
+      el.style.display = 'none';
+    } else {
+      el.style.display = 'block';
+      el.style.left = sx + 'px';
+      el.style.top = sy + 'px';
+    }
   });
 }
 
@@ -153,31 +221,19 @@ function showTip(e, key) {
 }
 function hideTip() { tip.style.opacity = '0'; }
 
-stage.addEventListener('pointerdown', e => {
-  dragging = true; dragMoved = false;
-  stage.classList.add('dragging');
-  dragStartX = e.clientX;
-  panStartX = pan.x;
-  document.getElementById('dragHint').style.opacity = '0';
+addEventListener('resize', () => {
+  camera.aspect = innerWidth/innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  placeHotspots();
 });
-addEventListener('pointermove', e => {
-  if (!dragging) return;
-  const dx = e.clientX - dragStartX;
-  if (Math.abs(dx) > 3) dragMoved = true;
-  pan.x = panStartX + dx;
-  clampPan();
-  render();
-});
-addEventListener('pointerup', () => { dragging = false; stage.classList.remove('dragging'); });
 
-img.addEventListener('load', () => {
-  imgW = img.naturalWidth; imgH = img.naturalHeight;
-  layout();
-  const l = document.getElementById('loading');
-  l.style.opacity = '0';
-  setTimeout(() => l.remove(), 500);
-});
-addEventListener('resize', layout);
+function animate() {
+  requestAnimationFrame(animate);
+  renderer.render(scene, camera);
+}
+animate();
+
 setTimeout(() => {
   const h = document.getElementById('dragHint');
   if (h) h.style.opacity = '0';
