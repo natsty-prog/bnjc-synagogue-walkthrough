@@ -8,10 +8,15 @@
   *{margin:0;padding:0;box-sizing:border-box}
   html,body{height:100%;overflow:hidden;background:#0d1118;font-family:'Segoe UI',sans-serif;color:#f1ede4}
   #stage{position:fixed;inset:0;overflow:hidden;cursor:grab}
-  .photo{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;
-         opacity:0;transition:opacity .55s ease, transform .55s ease;will-change:transform,opacity;
-         transform:scale(1.08)}
-  .photo.active{opacity:1;transform:scale(1.0)}
+  #stage.dragging{cursor:grabbing}
+  .photo{position:absolute;top:50%;left:50%;width:155%;height:155%;object-fit:cover;
+         opacity:0;transition:opacity .55s ease;will-change:transform,opacity;
+         transform:translate(-50%,-50%) scale(1);pointer-events:none}
+  .photo.active{opacity:1;pointer-events:auto}
+  #dragHint{position:fixed;bottom:90px;left:50%;transform:translateX(-50%);
+            background:rgba(10,10,8,.6);border:1px solid rgba(255,255,255,.25);
+            border-radius:20px;padding:7px 18px;font-size:.72rem;color:#e7dcc0;
+            z-index:20;pointer-events:none;transition:opacity .4s;backdrop-filter:blur(4px)}
 
   #ui{position:fixed;top:0;left:0;right:0;display:flex;justify-content:space-between;
       align-items:flex-start;padding:16px 22px;pointer-events:none;z-index:20}
@@ -69,6 +74,7 @@
 </div>
 
 <div id="stage"></div>
+<div id="dragHint">🖱️ Drag to look around</div>
 <div id="tip"><h3 id="tTitle"></h3><p id="tDesc"></p></div>
 <div id="thumbs"></div>
 
@@ -218,26 +224,52 @@ function goTo(key) {
   if (!NODES[key] || key === current) { renderOverlays(current); return; }
   imgEls[current].classList.remove('active');
   current = key;
+  pan.x = 0; pan.y = 0;
+  applyPan();
   imgEls[current].classList.add('active');
   renderOverlays(current);
   renderThumbs();
   hideTip();
 }
 
-// subtle parallax pan on mouse move for a more immersive feel
-stage.addEventListener('mousemove', e => {
-  const dx = (e.clientX / innerWidth - 0.5) * 14;
-  const dy = (e.clientY / innerHeight - 0.5) * 8;
-  imgEls[current].style.transform = `scale(1.05) translate(${-dx}px, ${-dy}px)`;
+// ── DRAG-TO-LOOK PANNING ───────────────────────────
+// Real 360° rotation needs an actual equirectangular/panorama capture, which these
+// are not — these are fixed-perspective photos. This simulates "looking around" by
+// letting you pan within the photo's own field of view (clamped at its edges),
+// which is the closest honest approximation without new panoramic source images.
+const PAN_LIMIT_X = 320, PAN_LIMIT_Y = 160;
+const pan = { x: 0, y: 0 };
+let dragging = false, dragStartX = 0, dragStartY = 0, panStartX = 0, panStartY = 0;
+
+function applyPan() {
+  const img = imgEls[current];
+  img.style.transform = `translate(calc(-50% + ${pan.x}px), calc(-50% + ${pan.y}px))`;
+}
+
+stage.addEventListener('pointerdown', e => {
+  dragging = true;
+  stage.classList.add('dragging');
+  dragStartX = e.clientX; dragStartY = e.clientY;
+  panStartX = pan.x; panStartY = pan.y;
+  document.getElementById('dragHint').style.opacity = '0';
 });
-stage.addEventListener('mouseleave', () => {
-  imgEls[current].style.transform = 'scale(1.0)';
+addEventListener('pointermove', e => {
+  if (!dragging) return;
+  pan.x = Math.max(-PAN_LIMIT_X, Math.min(PAN_LIMIT_X, panStartX + (e.clientX - dragStartX)));
+  pan.y = Math.max(-PAN_LIMIT_Y, Math.min(PAN_LIMIT_Y, panStartY + (e.clientY - dragStartY)));
+  applyPan();
 });
+addEventListener('pointerup', () => { dragging = false; stage.classList.remove('dragging'); });
 
 // init
 imgEls[current].classList.add('active');
+applyPan();
 renderOverlays(current);
 renderThumbs();
+setTimeout(() => {
+  const h = document.getElementById('dragHint');
+  if (h) h.style.opacity = '0';
+}, 4000);
 
 let loaded = 0;
 Object.values(imgEls).forEach(img => {
