@@ -348,7 +348,9 @@ const startScreen = document.getElementById('start');
 const crosshair = document.getElementById('crosshair');
 const infoBar = document.getElementById('info');
 
-document.getElementById('startBtn').onclick = () => controls.lock();
+document.getElementById('startBtn').onclick = () => {
+  try { controls.lock(); } catch(err) { document.dispatchEvent(new Event('pointerlockerror')); }
+};
 controls.addEventListener('lock', () => {
   startScreen.style.display = 'none';
   crosshair.style.display = 'block';
@@ -367,6 +369,9 @@ document.addEventListener('pointerlockerror', () => {
   startScreen.style.display = 'none';
   infoBar.style.display = 'block';
 });
+if (new URLSearchParams(location.search).has('nolock')) {
+  document.dispatchEvent(new Event('pointerlockerror'));
+}
 
 let dragLook = false, lastDragX = 0, lastDragY = 0;
 renderer.domElement.addEventListener('pointerdown', e => {
