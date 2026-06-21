@@ -125,18 +125,19 @@ scene.add(skyFill);
 
 // ── MATERIALS ─────────────────────────────────────
 const M = {
-  floor:   new THREE.MeshStandardMaterial({ color:0xe5e1d6, roughness:.55, metalness:.02 }),
-  wallCream: new THREE.MeshStandardMaterial({ color:0xe9e3d4, roughness:.85, metalness:0 }),
-  wood:    new THREE.MeshStandardMaterial({ color:0xc9a06a, roughness:.55, metalness:.02 }),
-  woodDk:  new THREE.MeshStandardMaterial({ color:0x9c7848, roughness:.6,  metalness:.02 }),
-  pewWood: new THREE.MeshStandardMaterial({ color:0xd9b988, roughness:.5,  metalness:.02 }),
-  blue:    new THREE.MeshStandardMaterial({ color:0x1f3e72, roughness:.85, metalness:0 }),
-  arkDark: new THREE.MeshStandardMaterial({ color:0x14181d, roughness:.35, metalness:.55 }),
-  arkTile: new THREE.MeshStandardMaterial({ color:0x1a2a44, roughness:.3,  metalness:.4 }),
+  floor:     new THREE.MeshStandardMaterial({ color:0xe9e6dd, roughness:.5,  metalness:.02 }),
+  wallCream: new THREE.MeshStandardMaterial({ color:0xefebe0, roughness:.88, metalness:0 }),
+  wood:      new THREE.MeshStandardMaterial({ color:0xe0c89c, roughness:.5,  metalness:.02 }),
+  woodDk:    new THREE.MeshStandardMaterial({ color:0xc6a878, roughness:.55, metalness:.02 }),
+  woodPale:  new THREE.MeshStandardMaterial({ color:0xead8b8, roughness:.48, metalness:.02 }),
+  pewWood:   new THREE.MeshStandardMaterial({ color:0xe6d2a8, roughness:.45, metalness:.02 }),
+  blue:      new THREE.MeshStandardMaterial({ color:0x1f3e72, roughness:.8,  metalness:0 }),
+  arkDark:   new THREE.MeshStandardMaterial({ color:0x14181d, roughness:.35, metalness:.55 }),
+  arkTile:   new THREE.MeshStandardMaterial({ color:0x152844, roughness:.28, metalness:.45 }),
   bookSpine: new THREE.MeshStandardMaterial({ color:0x7a3030, roughness:.7 }),
-  glass:   new THREE.MeshPhysicalMaterial({ color:0xdfeaf5, roughness:.05, metalness:0, transparent:true, opacity:.18, transmission:.85 }),
-  frame:   new THREE.MeshStandardMaterial({ color:0x2a2620, roughness:.5, metalness:.3 }),
-  metal:   new THREE.MeshStandardMaterial({ color:0xb8bcc2, roughness:.3, metalness:.7 }),
+  glass:     new THREE.MeshPhysicalMaterial({ color:0xdfeaf5, roughness:.05, metalness:0, transparent:true, opacity:.16, transmission:.88 }),
+  frame:     new THREE.MeshStandardMaterial({ color:0x2a2620, roughness:.5, metalness:.3 }),
+  metal:     new THREE.MeshStandardMaterial({ color:0xb8bcc2, roughness:.3, metalness:.7 }),
 };
 
 function mesh(geo, mat, parent, pos=[0,0,0], rot=[0,0,0]) {
@@ -186,35 +187,68 @@ for (let z = -D/2+1.6; z < D/2-1; z += 2.0) {
 }
 mesh(new THREE.BoxGeometry(.1, H-1.0, .06), M.frame, winWallGroup, [W/2-.05, H/2, D/2-1.05]);
 
-// ── ARK (Aron HaKodesh) — dark tiled cabinet on raised bimah platform ──
-const bimah = mesh(new THREE.BoxGeometry(6.4, .35, 3.2), M.wood, root, [0, .175, -D/2+3.0]);
-mesh(new THREE.BoxGeometry(6.6, .06, 3.4), M.woodDk, root, [0, .38, -D/2+3.0]);
+// ── ARK (Aron HaKodesh) — dark tiled mosaic wall behind light wood slatted sliding doors ──
+const bimah = mesh(new THREE.BoxGeometry(7.4, .35, 3.6), M.woodPale, root, [0, .175, -D/2+3.2]);
+mesh(new THREE.BoxGeometry(7.6, .06, 3.8), M.woodDk, root, [0, .38, -D/2+3.2]);
+mesh(new THREE.BoxGeometry(7.6, .35, .15), M.woodDk, root, [0, .175, -D/2+1.45]); // step riser
+for (let s = 0; s < 3; s++) {
+  mesh(new THREE.BoxGeometry(7.8-s*.3, .12, .35), M.floor, root, [0, .06+s*.12, -D/2+1.4-s*.35]);
+}
 
-const arkGroup = new THREE.Group();
-arkGroup.position.set(0, .35, -D/2+1.0);
-root.add(arkGroup);
-arkGroup.userData.info = 'ark';
-const arkBody = mesh(new THREE.BoxGeometry(4.6, 3.4, .5), M.arkDark, arkGroup, [0,1.7,0]);
-arkBody.userData.info = 'ark';
-// tiled door pattern
-for (let x = -2.0; x <= 2.0; x += 0.42) {
-  for (let y = 0.3; y <= 3.2; y += 0.42) {
-    mesh(new THREE.BoxGeometry(.36,.36,.04), M.arkTile, arkGroup, [x, y, .27]);
+// dark navy mosaic tile feature wall (full height, behind everything)
+const tileWallGroup = new THREE.Group();
+tileWallGroup.position.set(0, 0, -D/2+0.35);
+root.add(tileWallGroup);
+for (let x = -3.6; x <= 3.6; x += 0.32) {
+  for (let y = 0.3; y <= 6.6; y += 0.32) {
+    mesh(new THREE.BoxGeometry(.28,.28,.05), M.arkTile, tileWallGroup, [x, y, 0]);
   }
 }
-// wood frame around ark
-mesh(new THREE.BoxGeometry(5.0,3.8,.3), M.woodDk, arkGroup, [0,1.7,-.15]);
-arkGroup.children[arkGroup.children.length-1].userData.info = undefined;
+
+// Ark cabinet: light wood frame with vertical slatted sliding doors (matches photo)
+const arkGroup = new THREE.Group();
+arkGroup.position.set(0, .35, -D/2+0.85);
+root.add(arkGroup);
+arkGroup.userData.info = 'ark';
+// frame
+mesh(new THREE.BoxGeometry(4.8,4.0,.18), M.woodDk, arkGroup, [0,2.0,-.05]);
+arkGroup.children[arkGroup.children.length-1].userData.info = 'ark';
+// vertical wood slats forming the two sliding doors
+for (let x = -2.25; x <= 2.25; x += 0.20) {
+  const slat = mesh(new THREE.BoxGeometry(.14,3.7,.16), M.woodPale, arkGroup, [x, 1.95, .05]);
+  slat.userData.info = 'ark';
+}
+// top and bottom rails
+mesh(new THREE.BoxGeometry(4.9,.18,.22), M.woodDk, arkGroup, [0,3.85,.06]);
+mesh(new THREE.BoxGeometry(4.9,.18,.22), M.woodDk, arkGroup, [0,.10,.06]);
 
 // ── BIMAH LECTERN (reading table with blue cover) ─
 const lectern = mesh(new THREE.BoxGeometry(2.0,.9,.9), M.woodDk, root, [0,.45+.35,-D/2+4.6]);
 lectern.userData.info = 'bimah';
 mesh(new THREE.BoxGeometry(2.1,.08,1.0), M.blue, root, [0,.9+.35,-D/2+4.6]);
 
-// posts around bimah
-[[-2.6,-D/2+2.2],[2.6,-D/2+2.2],[-2.6,-D/2+4.0],[2.6,-D/2+4.0]].forEach(([x,z]) => {
-  mesh(new THREE.CylinderGeometry(.05,.05,1.1,8), M.woodDk, root, [x,.35+.55,z]);
-});
+// ── SLATTED WOOD PEDESTAL COLUMNS (vertical-slat cylinders w/ ball finials, as in photo) ──
+function slatColumn(x, z, h=1.05, r=.16) {
+  const g = new THREE.Group();
+  g.position.set(x, .35, z);
+  root.add(g);
+  g.userData.info = 'column';
+  const n = 14;
+  for (let i = 0; i < n; i++) {
+    const a = (i/n) * Math.PI * 2;
+    const slat = mesh(new THREE.BoxGeometry(.05, h, .06), M.woodPale, g,
+      [r*Math.cos(a), h/2, r*Math.sin(a)]);
+    slat.lookAt(new THREE.Vector3(0, h/2, 0).add(g.position));
+    slat.userData.info = 'column';
+  }
+  mesh(new THREE.SphereGeometry(r*1.15, 14, 14), M.woodPale, g, [0, h+r*0.4, 0]);
+}
+[[-2.7,-D/2+2.0],[2.7,-D/2+2.0],[-2.7,-D/2+4.4],[2.7,-D/2+4.4]].forEach(([x,z]) => slatColumn(x,z));
+
+// round blue ottoman / pouffe
+const ottoman = mesh(new THREE.CylinderGeometry(.42,.42,.45,24), M.blue, root, [1.4,.225,-D/2+5.3]);
+ottoman.userData.info = 'pew';
+mesh(new THREE.CylinderGeometry(.43,.43,.06,24), M.blue, root, [1.4,.45,-D/2+5.3]);
 
 // ── READING DESK (amud, with the round-finial posts, lower center) ──
 const amudGroup = new THREE.Group();
