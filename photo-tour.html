@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BNJC Synagogue — Real Photo Tour</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  html,body{height:100%;overflow:hidden;background:#0d1118;font-family:'Segoe UI',sans-serif;color:#f1ede4}
+  #stage{position:fixed;inset:0;overflow:hidden;cursor:grab}
+  .photo{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;
+         opacity:0;transition:opacity .55s ease, transform .55s ease;will-change:transform,opacity;
+         transform:scale(1.08)}
+  .photo.active{opacity:1;transform:scale(1.0)}
+
+  #ui{position:fixed;top:0;left:0;right:0;display:flex;justify-content:space-between;
+      align-items:flex-start;padding:16px 22px;pointer-events:none;z-index:20}
+  #ui>*{pointer-events:auto}
+  h1{font-size:1.2rem;font-weight:800;color:#fff;text-shadow:0 2px 14px rgba(0,0,0,.8)}
+  .sub{font-size:.72rem;color:#e7dcc0;margin-top:4px;text-shadow:0 1px 8px rgba(0,0,0,.8)}
+
+  .navArrow{position:absolute;width:58px;height:58px;border-radius:50%;
+            background:rgba(15,18,12,.45);border:2px solid rgba(255,255,255,.85);
+            display:flex;align-items:center;justify-content:center;cursor:pointer;
+            backdrop-filter:blur(3px);transition:transform .2s,background .2s;z-index:15;
+            box-shadow:0 6px 20px rgba(0,0,0,.4)}
+  .navArrow:hover{background:rgba(201,168,92,.55);transform:scale(1.12)}
+  .navArrow svg{width:26px;height:26px;fill:none;stroke:#fff;stroke-width:2.4}
+
+  .hotspot{position:absolute;width:26px;height:26px;border-radius:50%;
+           background:rgba(201,168,92,.85);border:2px solid #fff;cursor:pointer;
+           box-shadow:0 0 0 0 rgba(201,168,92,.7);animation:pulse 2.2s infinite;z-index:14}
+  @keyframes pulse{
+    0%{box-shadow:0 0 0 0 rgba(201,168,92,.55)}
+    70%{box-shadow:0 0 0 14px rgba(201,168,92,0)}
+    100%{box-shadow:0 0 0 0 rgba(201,168,92,0)}
+  }
+
+  #tip{position:fixed;z-index:30;width:280px;background:rgba(14,12,8,.96);
+       border:1px solid #4a3f28;border-left:3px solid #c9a85c;border-radius:10px;
+       padding:12px 15px;pointer-events:none;opacity:0;transition:opacity .2s}
+  #tip h3{color:#e8d4a0;font-size:.85rem;margin-bottom:6px}
+  #tip p{color:#c4bba6;font-size:.76rem;line-height:1.55}
+
+  #thumbs{position:fixed;bottom:0;left:0;right:0;display:flex;justify-content:center;
+          gap:10px;padding:14px;background:linear-gradient(0deg,rgba(0,0,0,.55),transparent);
+          z-index:20}
+  .thumb{width:78px;height:52px;border-radius:6px;overflow:hidden;cursor:pointer;
+         border:2px solid rgba(255,255,255,.35);opacity:.65;transition:all .2s}
+  .thumb.active{border-color:#c9a85c;opacity:1;transform:translateY(-3px)}
+  .thumb img{width:100%;height:100%;object-fit:cover;display:block}
+
+  #loading{position:fixed;inset:0;background:#0d1118;display:flex;flex-direction:column;
+           align-items:center;justify-content:center;z-index:99;transition:opacity .5s}
+  .spin{width:42px;height:42px;border:3px solid #2a2418;border-top-color:#c9a85c;
+        border-radius:50%;animation:sp .8s linear infinite;margin-bottom:14px}
+  @keyframes sp{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+
+<div id="loading"><div class="spin"></div><p style="color:#a89a78;font-size:.8rem">Loading real photos…</p></div>
+
+<div id="ui">
+  <div>
+    <h1>🕍 BNJC Synagogue — Real Photo Tour</h1>
+    <p class="sub">Authentic photographs · Brighton &amp; Hove · click the arrows to move through the room</p>
+  </div>
+</div>
+
+<div id="stage"></div>
+<div id="tip"><h3 id="tTitle"></h3><p id="tDesc"></p></div>
+<div id="thumbs"></div>
+
+<script>
+// ── DATA: each node = one real photograph, with directional links and info hotspots ──
+const NODES = {
+  entrance: {
+    src: 'photos/synagogue4.png',
+    label: 'Entrance — looking down the aisle',
+    links: [
+      { to:'bimahWide', x:'50%', y:'46%', label:'Walk toward the Bimah' }
+    ],
+    hotspots: [
+      { x:'50%', y:'40%', key:'ark' },
+      { x:'18%', y:'62%', key:'pew' },
+      { x:'80%', y:'62%', key:'pew' },
+      { x:'8%',  y:'30%', key:'library' },
+      { x:'92%', y:'30%', key:'library' },
+      { x:'50%', y:'12%', key:'ceiling' },
+    ]
+  },
+  bimahWide: {
+    src: 'photos/synagogue1.png',
+    label: 'Approaching the Bimah',
+    links: [
+      { to:'entrance', x:'10%', y:'55%', label:'Back to entrance' },
+      { to:'bimahClose', x:'62%', y:'45%', label:'Closer to the Ark' }
+    ],
+    hotspots: [
+      { x:'20%', y:'30%', key:'ark' },
+      { x:'46%', y:'48%', key:'standDots' },
+      { x:'72%', y:'42%', key:'library' },
+      { x:'78%', y:'62%', key:'pew' },
+    ]
+  },
+  bimahClose: {
+    src: 'photos/synagogue2.png',
+    label: 'At the Bimah, facing the Ark',
+    links: [
+      { to:'bimahWide', x:'88%', y:'55%', label:'Step back' },
+      { to:'arkView', x:'18%', y:'35%', label:'Face the Ark' }
+    ],
+    hotspots: [
+      { x:'14%', y:'32%', key:'ark' },
+      { x:'42%', y:'40%', key:'bimah' },
+      { x:'58%', y:'52%', key:'standDots' },
+      { x:'85%', y:'45%', key:'pew' },
+    ]
+  },
+  arkView: {
+    src: 'photos/synagogue3.png',
+    label: 'Beside the Bimah, the Ark in view',
+    links: [
+      { to:'bimahClose', x:'85%', y:'58%', label:'Turn back to the room' }
+    ],
+    hotspots: [
+      { x:'12%', y:'35%', key:'ark' },
+      { x:'40%', y:'45%', key:'bimah' },
+      { x:'58%', y:'52%', key:'standDots' },
+      { x:'50%', y:'10%', key:'ceiling' },
+    ]
+  },
+};
+
+const INFO = {
+  ark:       { t:'Aron HaKodesh — The Holy Ark', d:'The Ark houses the Torah scrolls. The dark vertical-slatted screen marks the holiest point in the sanctuary, traditionally facing Jerusalem.' },
+  bimah:     { t:'Bimah & Reading Table', d:'The raised platform with a blue-draped reading table, from which services are led and the Torah is read.' },
+  standDots: { t:'Memorial Plaque Stand', d:'A stand bearing small commemorative markers — often used for donor recognition or yahrzeit (memorial date) plaques.' },
+  pew:       { t:'Congregation Seating', d:'Light oak pews with blue cushioned seats, arranged either side of a central aisle.' },
+  library:   { t:'Built-in Library Shelving', d:'Oak shelving holding prayer books and Torah commentaries, built into the side walls near the Ark.' },
+  ceiling:   { t:'Coffered Timber Ceiling', d:'A geometric diamond-coffered wood ceiling — the signature architectural feature of the sanctuary.' },
+};
+
+const stage = document.getElementById('stage');
+const thumbs = document.getElementById('thumbs');
+const tip = document.getElementById('tip');
+const tTitle = document.getElementById('tTitle');
+const tDesc = document.getElementById('tDesc');
+
+const imgEls = {};
+let current = 'entrance';
+
+function buildImg(key) {
+  const img = document.createElement('img');
+  img.src = NODES[key].src;
+  img.className = 'photo';
+  img.draggable = false;
+  stage.appendChild(img);
+  imgEls[key] = img;
+  return img;
+}
+Object.keys(NODES).forEach(buildImg);
+
+function showHotspotTip(e, key) {
+  const info = INFO[key];
+  if (!info) return;
+  tTitle.textContent = info.t;
+  tDesc.textContent = info.d;
+  let lx = e.clientX + 18, ly = e.clientY + 14;
+  if (lx + 290 > innerWidth) lx = e.clientX - 292;
+  tip.style.left = lx+'px'; tip.style.top = ly+'px';
+  tip.style.opacity = '1';
+}
+function hideTip() { tip.style.opacity = '0'; }
+
+function renderOverlays(key) {
+  document.querySelectorAll('.navArrow,.hotspot').forEach(el => el.remove());
+  const node = NODES[key];
+
+  node.links.forEach(link => {
+    const a = document.createElement('div');
+    a.className = 'navArrow';
+    a.style.left = link.x; a.style.top = link.y;
+    a.style.transform = 'translate(-50%,-50%)';
+    a.title = link.label;
+    a.innerHTML = '<svg viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7"/></svg>';
+    a.onclick = () => goTo(link.to);
+    stage.appendChild(a);
+  });
+
+  node.hotspots.forEach(hs => {
+    const h = document.createElement('div');
+    h.className = 'hotspot';
+    h.style.left = hs.x; h.style.top = hs.y;
+    h.style.transform = 'translate(-50%,-50%)';
+    h.addEventListener('mouseenter', e => showHotspotTip(e, hs.key));
+    h.addEventListener('mousemove', e => showHotspotTip(e, hs.key));
+    h.addEventListener('mouseleave', hideTip);
+    stage.appendChild(h);
+  });
+}
+
+function renderThumbs() {
+  thumbs.innerHTML = '';
+  Object.keys(NODES).forEach(key => {
+    const t = document.createElement('div');
+    t.className = 'thumb' + (key === current ? ' active' : '');
+    const img = document.createElement('img');
+    img.src = NODES[key].src;
+    t.appendChild(img);
+    t.onclick = () => goTo(key);
+    thumbs.appendChild(t);
+  });
+}
+
+function goTo(key) {
+  if (!NODES[key] || key === current) { renderOverlays(current); return; }
+  imgEls[current].classList.remove('active');
+  current = key;
+  imgEls[current].classList.add('active');
+  renderOverlays(current);
+  renderThumbs();
+  hideTip();
+}
+
+// subtle parallax pan on mouse move for a more immersive feel
+stage.addEventListener('mousemove', e => {
+  const dx = (e.clientX / innerWidth - 0.5) * 14;
+  const dy = (e.clientY / innerHeight - 0.5) * 8;
+  imgEls[current].style.transform = `scale(1.05) translate(${-dx}px, ${-dy}px)`;
+});
+stage.addEventListener('mouseleave', () => {
+  imgEls[current].style.transform = 'scale(1.0)';
+});
+
+// init
+imgEls[current].classList.add('active');
+renderOverlays(current);
+renderThumbs();
+
+let loaded = 0;
+Object.values(imgEls).forEach(img => {
+  img.addEventListener('load', () => {
+    loaded++;
+    if (loaded >= Object.keys(NODES).length) {
+      const l = document.getElementById('loading');
+      l.style.opacity = '0';
+      setTimeout(() => l.remove(), 500);
+    }
+  });
+});
+</script>
+</body>
+</html>
