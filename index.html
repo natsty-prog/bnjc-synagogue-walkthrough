@@ -82,6 +82,65 @@
 <script type="module">
 import * as THREE from 'three';
 import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { SSAOPass } from 'three/addons/postprocessing/SSAOPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+
+// ── PROCEDURAL TEXTURES (canvas-generated, no external assets needed) ──
+function woodTexture(base, dark, w=512, h=512) {
+  const c = document.createElement('canvas'); c.width=w; c.height=h;
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = base; ctx.fillRect(0,0,w,h);
+  for (let i = 0; i < 90; i++) {
+    const y = Math.random()*h;
+    ctx.strokeStyle = `rgba(${dark},${0.05+Math.random()*0.12})`;
+    ctx.lineWidth = 1 + Math.random()*2;
+    ctx.beginPath(); ctx.moveTo(0, y);
+    for (let x = 0; x <= w; x += 32) ctx.lineTo(x, y + Math.sin(x*0.02+i)*6 + (Math.random()-.5)*4);
+    ctx.stroke();
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+function fabricTexture(base, w=256, h=256) {
+  const c = document.createElement('canvas'); c.width=w; c.height=h;
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = base; ctx.fillRect(0,0,w,h);
+  for (let y=0; y<h; y+=2) {
+    ctx.fillStyle = `rgba(0,0,0,${Math.random()*0.05})`;
+    ctx.fillRect(0,y,w,1);
+  }
+  for (let x=0; x<w; x+=2) {
+    ctx.fillStyle = `rgba(255,255,255,${Math.random()*0.04})`;
+    ctx.fillRect(x,0,1,h);
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+function terrazzoTexture(w=512, h=512) {
+  const c = document.createElement('canvas'); c.width=w; c.height=h;
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = '#e9e6dd'; ctx.fillRect(0,0,w,h);
+  for (let i=0;i<900;i++) {
+    const x=Math.random()*w, y=Math.random()*h, r=1+Math.random()*2.5;
+    const tone = 180+Math.random()*60;
+    ctx.fillStyle = `rgba(${tone},${tone},${tone-6},${.4+Math.random()*.4})`;
+    ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.fill();
+  }
+  ctx.strokeStyle='rgba(150,145,130,.5)'; ctx.lineWidth=2;
+  for (let gx=0; gx<=w; gx+=128) { ctx.beginPath(); ctx.moveTo(gx,0); ctx.lineTo(gx,h); ctx.stroke(); }
+  for (let gy=0; gy<=h; gy+=128) { ctx.beginPath(); ctx.moveTo(0,gy); ctx.lineTo(w,gy); ctx.stroke(); }
+  const tex = new THREE.CanvasTexture(c);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
 
 // ── RENDERER ──────────────────────────────────────
 const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -123,21 +182,33 @@ fillR.position.set(5, 4, 2); scene.add(fillR);
 const skyFill = new THREE.HemisphereLight(0xe8eef5, 0x3a3022, 0.5);
 scene.add(skyFill);
 
+// ── ENVIRONMENT (for subtle reflections on glass/metal/dark surfaces) ──
+const pmrem = new THREE.PMREMGenerator(renderer);
+const envTex = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+scene.environment = envTex;
+
+// ── PROCEDURAL TEXTURE INSTANCES ──────────────────
+const woodTexA  = woodTexture('#e0c89c', '120,90,55'); woodTexA.repeat.set(2,2);
+const woodTexB  = woodTexture('#ead8b8', '130,100,65'); woodTexB.repeat.set(3,1);
+const woodTexC  = woodTexture('#c6a878', '100,75,45'); woodTexC.repeat.set(2,1);
+const fabricTex = fabricTexture('#1f3e72'); fabricTex.repeat.set(2,2);
+const floorTex  = terrazzoTexture(); floorTex.repeat.set(5,7);
+
 // ── MATERIALS ─────────────────────────────────────
 const M = {
-  floor:     new THREE.MeshStandardMaterial({ color:0xe9e6dd, roughness:.5,  metalness:.02 }),
+  floor:     new THREE.MeshStandardMaterial({ map:floorTex, roughness:.45, metalness:.02, envMapIntensity:.4 }),
   wallCream: new THREE.MeshStandardMaterial({ color:0xefebe0, roughness:.88, metalness:0 }),
-  wood:      new THREE.MeshStandardMaterial({ color:0xe0c89c, roughness:.5,  metalness:.02 }),
-  woodDk:    new THREE.MeshStandardMaterial({ color:0xc6a878, roughness:.55, metalness:.02 }),
-  woodPale:  new THREE.MeshStandardMaterial({ color:0xead8b8, roughness:.48, metalness:.02 }),
-  pewWood:   new THREE.MeshStandardMaterial({ color:0xe6d2a8, roughness:.45, metalness:.02 }),
-  blue:      new THREE.MeshStandardMaterial({ color:0x1f3e72, roughness:.8,  metalness:0 }),
-  arkDark:   new THREE.MeshStandardMaterial({ color:0x14181d, roughness:.35, metalness:.55 }),
-  arkTile:   new THREE.MeshStandardMaterial({ color:0x152844, roughness:.28, metalness:.45 }),
+  wood:      new THREE.MeshStandardMaterial({ map:woodTexA, roughness:.55, metalness:.02, envMapIntensity:.5 }),
+  woodDk:    new THREE.MeshStandardMaterial({ map:woodTexC, roughness:.6,  metalness:.02, envMapIntensity:.5 }),
+  woodPale:  new THREE.MeshStandardMaterial({ map:woodTexB, roughness:.5,  metalness:.02, envMapIntensity:.5 }),
+  pewWood:   new THREE.MeshStandardMaterial({ map:woodTexB, roughness:.48, metalness:.02, envMapIntensity:.5 }),
+  blue:      new THREE.MeshStandardMaterial({ map:fabricTex, color:0xaab6d6, roughness:.85, metalness:0 }),
+  arkDark:   new THREE.MeshStandardMaterial({ color:0x14181d, roughness:.32, metalness:.6, envMapIntensity:1.4 }),
+  arkTile:   new THREE.MeshStandardMaterial({ color:0x152844, roughness:.22, metalness:.55, envMapIntensity:1.6 }),
   bookSpine: new THREE.MeshStandardMaterial({ color:0x7a3030, roughness:.7 }),
-  glass:     new THREE.MeshPhysicalMaterial({ color:0xdfeaf5, roughness:.05, metalness:0, transparent:true, opacity:.16, transmission:.88 }),
+  glass:     new THREE.MeshPhysicalMaterial({ color:0xdfeaf5, roughness:.04, metalness:0, transparent:true, opacity:.16, transmission:.88, envMapIntensity:1.2 }),
   frame:     new THREE.MeshStandardMaterial({ color:0x2a2620, roughness:.5, metalness:.3 }),
-  metal:     new THREE.MeshStandardMaterial({ color:0xb8bcc2, roughness:.3, metalness:.7 }),
+  metal:     new THREE.MeshStandardMaterial({ color:0xb8bcc2, roughness:.25, metalness:.8, envMapIntensity:1.5 }),
 };
 
 function mesh(geo, mat, parent, pos=[0,0,0], rot=[0,0,0]) {
@@ -449,11 +520,24 @@ function updateTooltip() {
   tipTimer = setTimeout(() => { tip.style.opacity = '0'; }, 150);
 }
 
+// ── POST-PROCESSING (SSAO contact shadows + tonemapped output) ──
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+const ssao = new SSAOPass(scene, camera, innerWidth, innerHeight);
+ssao.kernelRadius = 0.35;
+ssao.minDistance = 0.0008;
+ssao.maxDistance = 0.12;
+ssao.output = SSAOPass.OUTPUT.Default;
+composer.addPass(ssao);
+composer.addPass(new OutputPass());
+
 // ── RESIZE ────────────────────────────────────────
 addEventListener('resize', () => {
   camera.aspect = innerWidth / innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(innerWidth, innerHeight);
+  composer.setSize(innerWidth, innerHeight);
+  ssao.setSize(innerWidth, innerHeight);
 });
 
 // ── ANIMATE ───────────────────────────────────────
@@ -478,7 +562,7 @@ function animate() {
     updateTooltip();
   }
 
-  renderer.render(scene, camera);
+  composer.render();
 }
 animate();
 </script>
