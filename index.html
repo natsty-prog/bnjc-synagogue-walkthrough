@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BNJC Synagogue — Virtual Walkthrough</title>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{background:#0d1118;overflow:hidden;font-family:'Segoe UI',sans-serif;color:#f1ede4}
+  canvas{display:block}
+  #ui{position:fixed;top:0;left:0;right:0;display:flex;justify-content:space-between;
+      align-items:flex-start;padding:16px 22px;pointer-events:none;z-index:10}
+  #ui>*{pointer-events:auto}
+  h1{font-size:1.25rem;font-weight:800;color:#fff;text-shadow:0 2px 12px rgba(0,0,0,.7)}
+  .sub{font-size:.72rem;color:#cbb98a;margin-top:4px;text-shadow:0 1px 6px rgba(0,0,0,.7)}
+  #crosshair{position:fixed;top:50%;left:50%;width:6px;height:6px;margin:-3px;
+             border-radius:50%;background:rgba(255,255,255,.7);z-index:15;display:none}
+  #start{position:fixed;inset:0;background:linear-gradient(180deg,#1a1410,#0d1118 70%);
+         display:flex;flex-direction:column;align-items:center;justify-content:center;
+         z-index:100;text-align:center;padding:20px}
+  #start h2{font-size:1.8rem;font-weight:800;margin-bottom:10px;color:#f5e9c9}
+  #start p{color:#b8ad95;font-size:.85rem;max-width:440px;line-height:1.7;margin-bottom:26px}
+  #startBtn{background:linear-gradient(135deg,#9a7b3e,#c9a85c);border:none;color:#1a1410;
+            padding:13px 34px;border-radius:9px;font-size:.95rem;font-weight:700;
+            cursor:pointer;box-shadow:0 10px 30px rgba(201,168,92,.35);transition:transform .15s}
+  #startBtn:hover{transform:translateY(-2px)}
+  .key{display:inline-block;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.25);
+       border-radius:5px;padding:2px 8px;margin:0 2px;font-size:.78rem;font-weight:700}
+  #info{position:fixed;bottom:0;left:0;right:0;padding:11px;text-align:center;font-size:.7rem;
+        color:#a8a195;background:rgba(10,12,18,.65);backdrop-filter:blur(4px);z-index:10;
+        display:none}
+  #tip{position:fixed;z-index:20;width:280px;background:rgba(14,12,8,.95);
+       border:1px solid #4a3f28;border-left:3px solid #c9a85c;border-radius:10px;
+       padding:12px 15px;pointer-events:none;opacity:0;transition:opacity .2s;
+       backdrop-filter:blur(6px);left:50%;top:64%;transform:translateX(-50%)}
+  #tip h3{color:#e8d4a0;font-size:.85rem;margin-bottom:6px}
+  #tip p{color:#c4bba6;font-size:.76rem;line-height:1.55}
+  #loading{position:fixed;inset:0;background:#0d1118;display:flex;flex-direction:column;
+           align-items:center;justify-content:center;z-index:99;display:none}
+  .spin{width:42px;height:42px;border:3px solid #2a2418;border-top-color:#c9a85c;
+        border-radius:50%;animation:sp .8s linear infinite;margin-bottom:14px}
+  @keyframes sp{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+
+<div id="start">
+  <h2>🕍 BNJC — Virtual Synagogue Walkthrough</h2>
+  <p>
+    A first-person simulation of the main sanctuary, inspired by the
+    Brighton &amp; New Jewish Congregation building. Walk through the prayer hall,
+    explore the Ark, the bimah, and the library.
+  </p>
+  <p style="margin-top:-14px">
+    Move: <span class="key">W</span><span class="key">A</span><span class="key">S</span><span class="key">D</span>
+    or arrows &nbsp;•&nbsp; Look: mouse &nbsp;•&nbsp; <span class="key">Esc</span> to release
+  </p>
+  <button id="startBtn">Enter the Sanctuary</button>
+</div>
+
+<div id="loading"><div class="spin"></div><p>Building the sanctuary…</p></div>
+
+<div id="ui">
+  <div>
+    <h1>🕍 BNJC Synagogue — Virtual Walkthrough</h1>
+    <p class="sub">Based on bnjc.co.uk — Brighton &amp; Hove</p>
+  </div>
+</div>
+
+<div id="crosshair"></div>
+<div id="tip"><h3 id="tTitle"></h3><p id="tDesc"></p></div>
+<div id="info">WASD / arrows to walk • mouse to look • click to lock cursor • Esc to release</div>
+
+<script type="module">
+import * as THREE from 'three';
+import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
+
+// ── RENDERER ──────────────────────────────────────
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(innerWidth, innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+document.body.appendChild(renderer.domElement);
+
+// ── SCENE ─────────────────────────────────────────
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0xcfd6dd);
+scene.fog = new THREE.Fog(0xcfd6dd, 14, 34);
+
+// ── CAMERA / PLAYER ───────────────────────────────
+const camera = new THREE.PerspectiveCamera(68, innerWidth / innerHeight, 0.05, 100);
+const eyeHeight = 1.65;
+camera.position.set(0, eyeHeight, 9);
+
+// ── LIGHTS ────────────────────────────────────────
+scene.add(new THREE.AmbientLight(0xffffff, 0.65));
+
+const sun = new THREE.DirectionalLight(0xfff3da, 1.6);
+sun.position.set(6, 9, 4);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+sun.shadow.camera.near = .5; sun.shadow.camera.far = 30;
+sun.shadow.camera.left = -10; sun.shadow.camera.right = 10;
+sun.shadow.camera.top = 10; sun.shadow.camera.bottom = -10;
+scene.add(sun);
+
+const fillL = new THREE.PointLight(0xfff0d0, 0.8, 18);
+fillL.position.set(-5, 4, 2); scene.add(fillL);
+const fillR = new THREE.PointLight(0xfff0d0, 0.8, 18);
+fillR.position.set(5, 4, 2); scene.add(fillR);
+const skyFill = new THREE.HemisphereLight(0xe8eef5, 0x3a3022, 0.5);
+scene.add(skyFill);
+
+// ── MATERIALS ─────────────────────────────────────
+const M = {
+  floor:   new THREE.MeshStandardMaterial({ color:0xe5e1d6, roughness:.55, metalness:.02 }),
+  wallCream: new THREE.MeshStandardMaterial({ color:0xe9e3d4, roughness:.85, metalness:0 }),
+  wood:    new THREE.MeshStandardMaterial({ color:0xc9a06a, roughness:.55, metalness:.02 }),
+  woodDk:  new THREE.MeshStandardMaterial({ color:0x9c7848, roughness:.6,  metalness:.02 }),
+  pewWood: new THREE.MeshStandardMaterial({ color:0xd9b988, roughness:.5,  metalness:.02 }),
+  blue:    new THREE.MeshStandardMaterial({ color:0x1f3e72, roughness:.85, metalness:0 }),
+  arkDark: new THREE.MeshStandardMaterial({ color:0x14181d, roughness:.35, metalness:.55 }),
+  arkTile: new THREE.MeshStandardMaterial({ color:0x1a2a44, roughness:.3,  metalness:.4 }),
+  bookSpine: new THREE.MeshStandardMaterial({ color:0x7a3030, roughness:.7 }),
+  glass:   new THREE.MeshPhysicalMaterial({ color:0xdfeaf5, roughness:.05, metalness:0, transparent:true, opacity:.18, transmission:.85 }),
+  frame:   new THREE.MeshStandardMaterial({ color:0x2a2620, roughness:.5, metalness:.3 }),
+  metal:   new THREE.MeshStandardMaterial({ color:0xb8bcc2, roughness:.3, metalness:.7 }),
+};
+
+function mesh(geo, mat, parent, pos=[0,0,0], rot=[0,0,0]) {
+  const m = new THREE.Mesh(geo, mat);
+  m.position.set(...pos); m.rotation.set(...rot);
+  m.castShadow = true; m.receiveShadow = true;
+  parent.add(m); return m;
+}
+
+const root = new THREE.Group();
+scene.add(root);
+
+// ── ROOM DIMENSIONS ───────────────────────────────
+const W = 16, D = 22, H = 7.2;
+
+// ── FLOOR ─────────────────────────────────────────
+mesh(new THREE.PlaneGeometry(W, D), M.floor, root, [0,0,0], [-Math.PI/2,0,0]).receiveShadow = true;
+
+// ── CEILING (triangulated wood lattice look) ──────
+const ceil = mesh(new THREE.PlaneGeometry(W, D), M.wood, root, [0,H,0], [Math.PI/2,0,0]);
+ceil.castShadow = false;
+// diagonal beams for the triangulated-ceiling look
+for (let i = -7; i <= 7; i++) {
+  mesh(new THREE.BoxGeometry(.12, .12, D*1.42), M.woodDk, root, [i*1.05, H-.08, 0], [0, Math.PI/4, 0]);
+  mesh(new THREE.BoxGeometry(.12, .12, D*1.42), M.woodDk, root, [i*1.05, H-.08, 0], [0, -Math.PI/4, 0]);
+}
+
+// ── WALLS ─────────────────────────────────────────
+// Back wall (Ark wall, -Z)
+mesh(new THREE.PlaneGeometry(W, H), M.wallCream, root, [0, H/2, -D/2], [0,0,0]);
+// Front wall (entrance, +Z) — leave a gap implicitly (we just don't block movement)
+mesh(new THREE.PlaneGeometry(W, H), M.wallCream, root, [0, H/2, D/2], [0,Math.PI,0]);
+// Left wall (dark tiled, -X) — matches the dark tiled wall in the photo
+mesh(new THREE.PlaneGeometry(D, H), M.wallCream, root, [-W/2, H/2, 0], [0,Math.PI/2,0]);
+for (let z = -D/2+1; z < 4; z += 1.1) {
+  for (let y = 1; y < 6.2; y += 1.05) {
+    mesh(new THREE.BoxGeometry(.04,1.0,1.0), M.arkTile, root, [-W/2+.05, y, z]);
+  }
+}
+// Right wall — glazed curtain wall (large windows) toward garden
+const winWallGroup = new THREE.Group();
+root.add(winWallGroup);
+mesh(new THREE.PlaneGeometry(D, H), M.wallCream, winWallGroup, [W/2, H/2, 0], [0,-Math.PI/2,0]);
+for (let z = -D/2+1.6; z < D/2-1; z += 2.0) {
+  mesh(new THREE.BoxGeometry(.08, H-1.0, 1.5), M.glass, winWallGroup, [W/2-.05, H/2, z]);
+  mesh(new THREE.BoxGeometry(.1, H-1.0, .06), M.frame, winWallGroup, [W/2-.05, H/2, z-.75]);
+}
+mesh(new THREE.BoxGeometry(.1, H-1.0, .06), M.frame, winWallGroup, [W/2-.05, H/2, D/2-1.05]);
+
+// ── ARK (Aron HaKodesh) — dark tiled cabinet on raised bimah platform ──
+const bimah = mesh(new THREE.BoxGeometry(6.4, .35, 3.2), M.wood, root, [0, .175, -D/2+3.0]);
+mesh(new THREE.BoxGeometry(6.6, .06, 3.4), M.woodDk, root, [0, .38, -D/2+3.0]);
+
+const arkGroup = new THREE.Group();
+arkGroup.position.set(0, .35, -D/2+1.0);
+root.add(arkGroup);
+arkGroup.userData.info = 'ark';
+const arkBody = mesh(new THREE.BoxGeometry(4.6, 3.4, .5), M.arkDark, arkGroup, [0,1.7,0]);
+arkBody.userData.info = 'ark';
+// tiled door pattern
+for (let x = -2.0; x <= 2.0; x += 0.42) {
+  for (let y = 0.3; y <= 3.2; y += 0.42) {
+    mesh(new THREE.BoxGeometry(.36,.36,.04), M.arkTile, arkGroup, [x, y, .27]);
+  }
+}
+// wood frame around ark
+mesh(new THREE.BoxGeometry(5.0,3.8,.3), M.woodDk, arkGroup, [0,1.7,-.15]);
+arkGroup.children[arkGroup.children.length-1].userData.info = undefined;
+
+// ── BIMAH LECTERN (reading table with blue cover) ─
+const lectern = mesh(new THREE.BoxGeometry(2.0,.9,.9), M.woodDk, root, [0,.45+.35,-D/2+4.6]);
+lectern.userData.info = 'bimah';
+mesh(new THREE.BoxGeometry(2.1,.08,1.0), M.blue, root, [0,.9+.35,-D/2+4.6]);
+
+// posts around bimah
+[[-2.6,-D/2+2.2],[2.6,-D/2+2.2],[-2.6,-D/2+4.0],[2.6,-D/2+4.0]].forEach(([x,z]) => {
+  mesh(new THREE.CylinderGeometry(.05,.05,1.1,8), M.woodDk, root, [x,.35+.55,z]);
+});
+
+// ── READING DESK (amud, with the round-finial posts, lower center) ──
+const amudGroup = new THREE.Group();
+amudGroup.position.set(-1.6, 0, -D/2+8.0);
+root.add(amudGroup);
+amudGroup.userData.info = 'amud';
+mesh(new THREE.BoxGeometry(.18,1.05,.18), M.woodDk, amudGroup, [-.5,.52,0]);
+mesh(new THREE.BoxGeometry(.18,1.05,.18), M.woodDk, amudGroup, [.5,.52,0]);
+mesh(new THREE.SphereGeometry(.09,10,10), M.woodDk, amudGroup, [-.5,1.08,0]);
+mesh(new THREE.SphereGeometry(.09,10,10), M.woodDk, amudGroup, [.5,1.08,0]);
+mesh(new THREE.BoxGeometry(1.3,.6,.5), M.woodDk, amudGroup, [0,1.05,.25],[-.35,0,0]);
+mesh(new THREE.BoxGeometry(1.2,.05,.42), M.arkDark, amudGroup, [0,1.18,.3],[-.35,0,0]);
+
+// small dark lectern with brass studs (the black stand with dots seen in photo)
+const standGroup = new THREE.Group();
+standGroup.position.set(-2.8, 0, -D/2+7.3);
+root.add(standGroup);
+standGroup.userData.info = 'standDots';
+mesh(new THREE.BoxGeometry(.5,1.0,.5), M.wood, standGroup, [0,.5,0]);
+const standFace = mesh(new THREE.BoxGeometry(1.0,.85,.06), M.arkDark, standGroup, [0,1.1,.3], [-.5,0,0]);
+standFace.userData.info = 'standDots';
+for (let r = 0; r < 6; r++) for (let c = 0; c < 8; c++) {
+  mesh(new THREE.CylinderGeometry(.025,.025,.02,8), M.metal,
+    standGroup, [-.42+c*.12, 1.42-r*.12, .335], [Math.PI/2-.5,0,0]);
+}
+
+// ── PEWS (rows of wooden benches with blue cushions) ──
+function buildPewRow(z, count, startX, gap) {
+  for (let i = 0; i < count; i++) {
+    const x = startX + i*gap;
+    const g = new THREE.Group();
+    g.position.set(x, 0, z);
+    root.add(g);
+    const seat = mesh(new THREE.BoxGeometry(1.7,.12,.55), M.pewWood, g, [0,.5,0]);
+    seat.userData.info = 'pew';
+    mesh(new THREE.BoxGeometry(1.6,.06,.5), M.blue, g, [0,.57,0]);
+    mesh(new THREE.BoxGeometry(1.7,.7,.08), M.pewWood, g, [0,.85,-.27]);
+    [-.78,.78].forEach(lx => mesh(new THREE.BoxGeometry(.08,.5,.55), M.pewWood, g, [lx,.25,0]));
+  }
+}
+// right-side pews facing the bimah (rows going back toward entrance)
+for (let r = 0; r < 5; r++) {
+  buildPewRow(-D/2 + 9.5 + r*1.5, 4, 1.6, 1.85);
+}
+// left small pews (near the reading desk, perpendicular feel kept simple)
+for (let r = 0; r < 3; r++) {
+  buildPewRow(-D/2 + 9.5 + r*1.5, 2, -5.6, 1.85);
+}
+
+// ── ARMCHAIRS / single seats near bimah (low wooden chairs) ──
+[[-3.2,-D/2+5.6],[3.2,-D/2+5.6],[-1.0,-D/2+6.2]].forEach(([x,z]) => {
+  const g = new THREE.Group(); g.position.set(x,0,z); root.add(g);
+  mesh(new THREE.BoxGeometry(.55,.5,.55), M.pewWood, g, [0,.27,0]);
+  mesh(new THREE.BoxGeometry(.5,.05,.5), M.blue, g, [0,.5,0]);
+  mesh(new THREE.BoxGeometry(.55,.6,.08), M.pewWood, g, [0,.78,-.24]);
+});
+
+// ── LIBRARY / BOOKSHELVES (right side, near entrance) ─
+const shelfGroup = new THREE.Group();
+shelfGroup.position.set(W/2-.6, 0, D/2-5);
+root.add(shelfGroup);
+shelfGroup.userData.info = 'library';
+for (let s = 0; s < 4; s++) {
+  const shelfZ = s*1.6 - 2.4;
+  mesh(new THREE.BoxGeometry(.9,5.2,1.5), M.wood, shelfGroup, [0,2.6,shelfZ]);
+  for (let lvl = 0; lvl < 5; lvl++) {
+    for (let b = 0; b < 10; b++) {
+      mesh(new THREE.BoxGeometry(.08,.5,.12), M.bookSpine, shelfGroup,
+        [-.35, 0.6+lvl*0.9, shelfZ - .6 + b*.13]);
+    }
+  }
+}
+
+// ── EXIT SIGN ──────────────────────────────────────
+const exitMat = new THREE.MeshStandardMaterial({ color:0x0a3d0a, emissive:new THREE.Color(0x16c916), roughness:.4 });
+mesh(new THREE.BoxGeometry(.5,.3,.05), exitMat, root, [W/2-.3, H-.6, D/2-2]);
+
+// ── INFO PANEL DATA ────────────────────────────────
+const INFO = {
+  ark:       { t:'Aron HaKodesh — The Holy Ark', d:'The Ark houses the Torah scrolls, the holiest objects in the synagogue. The congregation faces this wall — traditionally oriented toward Jerusalem — during prayer.' },
+  bimah:     { t:'Bimah & Reading Table', d:'The raised platform from which services are led and the Torah is read aloud during worship.' },
+  amud:      { t:'Reading Desk (Amud)', d:'A secondary lectern used by the prayer leader (chazzan) to lead the congregation in prayer.' },
+  standDots: { t:'Memorial / Donor Plaque Stand', d:'A wooden stand with brass memorial markers, commonly used to commemorate donors or mark yahrzeit (memorial) dates.' },
+  pew:       { t:'Congregation Seating', d:'Wooden pews with blue upholstered cushions, where the congregation sits during services.' },
+  library:   { t:'Synagogue Library', d:'Shelves holding prayer books (siddurim), Torah commentaries, and Jewish texts for study and reference.' },
+};
+
+const hitMeshes = [];
+root.traverse(o => { if (o.isMesh && o.userData.info) hitMeshes.push(o); });
+
+// ── POINTER LOCK CONTROLS (first person walk) ─────
+const controls = new PointerLockControls(camera, document.body);
+scene.add(controls.getObject());
+controls.getObject().position.copy(camera.position);
+
+const startScreen = document.getElementById('start');
+const crosshair = document.getElementById('crosshair');
+const infoBar = document.getElementById('info');
+
+document.getElementById('startBtn').onclick = () => controls.lock();
+controls.addEventListener('lock', () => {
+  startScreen.style.display = 'none';
+  crosshair.style.display = 'block';
+  infoBar.style.display = 'block';
+});
+controls.addEventListener('unlock', () => {
+  startScreen.style.display = 'flex';
+  crosshair.style.display = 'none';
+  infoBar.style.display = 'none';
+});
+
+// ── MOVEMENT ──────────────────────────────────────
+const move = { f:false, b:false, l:false, r:false };
+const velocity = new THREE.Vector3();
+const SPEED = 4.2;
+
+addEventListener('keydown', e => {
+  switch(e.code) {
+    case 'KeyW': case 'ArrowUp':    move.f = true; break;
+    case 'KeyS': case 'ArrowDown':  move.b = true; break;
+    case 'KeyA': case 'ArrowLeft':  move.l = true; break;
+    case 'KeyD': case 'ArrowRight': move.r = true; break;
+  }
+});
+addEventListener('keyup', e => {
+  switch(e.code) {
+    case 'KeyW': case 'ArrowUp':    move.f = false; break;
+    case 'KeyS': case 'ArrowDown':  move.b = false; break;
+    case 'KeyA': case 'ArrowLeft':  move.l = false; break;
+    case 'KeyD': case 'ArrowRight': move.r = false; break;
+  }
+});
+
+// simple AABB room bounds so the player can't walk through walls
+const margin = 0.45;
+function clampPosition(p) {
+  p.x = Math.max(-W/2+margin, Math.min(W/2-margin, p.x));
+  p.z = Math.max(-D/2+margin, Math.min(D/2-margin, p.z));
+  return p;
+}
+
+// ── TOOLTIP RAYCAST (center-screen) ───────────────
+const ray = new THREE.Raycaster();
+const center = new THREE.Vector2(0,0);
+const tip = document.getElementById('tip');
+const tTitle = document.getElementById('tTitle');
+const tDesc = document.getElementById('tDesc');
+let tipTimer;
+
+function updateTooltip() {
+  ray.setFromCamera(center, camera);
+  const hits = ray.intersectObjects(hitMeshes);
+  if (hits.length && hits[0].distance < 6) {
+    const key = hits[0].object.userData.info;
+    if (key && INFO[key]) {
+      tTitle.textContent = INFO[key].t;
+      tDesc.textContent = INFO[key].d;
+      tip.style.opacity = '1';
+      clearTimeout(tipTimer);
+      return;
+    }
+  }
+  clearTimeout(tipTimer);
+  tipTimer = setTimeout(() => { tip.style.opacity = '0'; }, 150);
+}
+
+// ── RESIZE ────────────────────────────────────────
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+// ── ANIMATE ───────────────────────────────────────
+const clock = new THREE.Clock();
+function animate() {
+  requestAnimationFrame(animate);
+  const dt = Math.min(clock.getDelta(), 0.05);
+
+  if (controls.isLocked) {
+    velocity.set(0,0,0);
+    if (move.f) velocity.z -= 1;
+    if (move.b) velocity.z += 1;
+    if (move.l) velocity.x -= 1;
+    if (move.r) velocity.x += 1;
+    if (velocity.lengthSq() > 0) {
+      velocity.normalize().multiplyScalar(SPEED * dt);
+      controls.moveRight(velocity.x);
+      controls.moveForward(-velocity.z);
+      clampPosition(controls.getObject().position);
+      controls.getObject().position.y = eyeHeight;
+    }
+    updateTooltip();
+  }
+
+  renderer.render(scene, camera);
+}
+animate();
+</script>
+</body>
+</html>
