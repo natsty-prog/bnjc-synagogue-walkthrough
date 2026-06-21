@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BNJC Synagogue — 360° Panorama</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  html,body{height:100%;overflow:hidden;background:#0d1118;font-family:'Segoe UI',sans-serif;color:#f1ede4}
+  #stage{position:fixed;inset:0;overflow:hidden;cursor:grab;background:#0d1118}
+  #stage.dragging{cursor:grabbing}
+  #track{position:absolute;top:50%;left:50%;display:flex;will-change:transform}
+  #track img{height:100%;display:block;user-select:none;-webkit-user-drag:none;pointer-events:none}
+
+  #ui{position:fixed;top:0;left:0;right:0;display:flex;justify-content:space-between;
+      align-items:flex-start;padding:16px 22px;pointer-events:none;z-index:20}
+  #ui>*{pointer-events:auto}
+  h1{font-size:1.2rem;font-weight:800;color:#fff;text-shadow:0 2px 14px rgba(0,0,0,.8)}
+  .sub{font-size:.72rem;color:#e7dcc0;margin-top:4px;text-shadow:0 1px 8px rgba(0,0,0,.8)}
+
+  .hotspot{position:absolute;top:0;left:0;width:26px;height:26px;border-radius:50%;
+           background:rgba(201,168,92,.85);border:2px solid #fff;cursor:pointer;
+           box-shadow:0 0 0 0 rgba(201,168,92,.7);animation:pulse 2.2s infinite;z-index:14;
+           pointer-events:auto}
+  @keyframes pulse{
+    0%{box-shadow:0 0 0 0 rgba(201,168,92,.55)}
+    70%{box-shadow:0 0 0 14px rgba(201,168,92,0)}
+    100%{box-shadow:0 0 0 0 rgba(201,168,92,0)}
+  }
+
+  #tip{position:fixed;z-index:30;width:280px;background:rgba(14,12,8,.96);
+       border:1px solid #4a3f28;border-left:3px solid #c9a85c;border-radius:10px;
+       padding:12px 15px;pointer-events:none;opacity:0;transition:opacity .2s}
+  #tip h3{color:#e8d4a0;font-size:.85rem;margin-bottom:6px}
+  #tip p{color:#c4bba6;font-size:.76rem;line-height:1.55}
+
+  #edgeL,#edgeR{position:fixed;top:0;bottom:0;width:90px;z-index:18;pointer-events:none}
+  #edgeL{left:0;background:linear-gradient(90deg,#0d1118,transparent)}
+  #edgeR{right:0;background:linear-gradient(-90deg,#0d1118,transparent)}
+
+  #dragHint{position:fixed;bottom:26px;left:50%;transform:translateX(-50%);
+            background:rgba(10,10,8,.6);border:1px solid rgba(255,255,255,.25);
+            border-radius:20px;padding:8px 20px;font-size:.74rem;color:#e7dcc0;
+            z-index:20;pointer-events:none;transition:opacity .5s;backdrop-filter:blur(4px)}
+
+  #loading{position:fixed;inset:0;background:#0d1118;display:flex;flex-direction:column;
+           align-items:center;justify-content:center;z-index:99;transition:opacity .5s}
+  .spin{width:42px;height:42px;border:3px solid #2a2418;border-top-color:#c9a85c;
+        border-radius:50%;animation:sp .8s linear infinite;margin-bottom:14px}
+  @keyframes sp{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+
+<div id="loading"><div class="spin"></div><p style="color:#a89a78;font-size:.8rem">Loading panorama…</p></div>
+
+<div id="ui">
+  <div>
+    <h1>🕍 BNJC Synagogue — 360° Panorama</h1>
+    <p class="sub">Real stitched panorama photograph · drag to look around the room</p>
+  </div>
+</div>
+
+<div id="stage">
+  <div id="track">
+    <img id="panoImg" src="photos/pano.png" draggable="false">
+  </div>
+</div>
+<div id="edgeL"></div>
+<div id="edgeR"></div>
+<div id="dragHint">🖱️ Drag left / right to look around the room</div>
+<div id="tip"><h3 id="tTitle"></h3><p id="tDesc"></p></div>
+
+<script>
+// hotspot positions as % of the ORIGINAL panorama image (1916x821)
+const HOTSPOTS = [
+  { x:11, y:42, key:'ark' },
+  { x:18, y:50, key:'bimah' },
+  { x:21, y:54, key:'standDots' },
+  { x:3,  y:38, key:'library' },
+  { x:95, y:38, key:'library' },
+  { x:80, y:58, key:'pew' },
+  { x:36, y:11, key:'ceiling' },
+  { x:55, y:38, key:'windows' },
+];
+
+const INFO = {
+  ark:       { t:'Aron HaKodesh — The Holy Ark', d:'The Ark houses the Torah scrolls. The dark vertical-slatted screen marks the holiest point in the sanctuary, traditionally facing Jerusalem.' },
+  bimah:     { t:'Bimah & Reading Table', d:'The raised platform with a blue-draped reading table, from which services are led and the Torah is read.' },
+  standDots: { t:'Memorial Plaque Stand', d:'A stand bearing small commemorative markers — often used for donor recognition or yahrzeit (memorial date) plaques.' },
+  pew:       { t:'Congregation Seating', d:'Light oak pews with blue cushioned seats, arranged either side of the central aisle.' },
+  library:   { t:'Built-in Library Shelving', d:'Oak shelving holding prayer books and Torah commentaries, built into the side walls.' },
+  ceiling:   { t:'Coffered Timber Ceiling', d:'A geometric diamond-coffered wood ceiling — the signature architectural feature of the sanctuary.' },
+  windows:   { t:'Garden-facing Windows', d:'A row of full-height windows looking out onto the garden, with a light timber cross-braced screen outside.' },
+};
+
+const stage = document.getElementById('stage');
+const track = document.getElementById('track');
+const img = document.getElementById('panoImg');
+const tip = document.getElementById('tip');
+const tTitle = document.getElementById('tTitle');
+const tDesc = document.getElementById('tDesc');
+
+let imgW = 0, imgH = 0;
+let scaledH = 0, scaledW = 0;
+let pan = { x: 0 };
+let dragging = false, dragStartX = 0, panStartX = 0, dragMoved = false;
+
+function layout() {
+  scaledH = innerHeight * 1.0;
+  scaledW = scaledH * (imgW / imgH);
+  img.style.height = scaledH + 'px';
+  clampPan();
+  render();
+  placeHotspots();
+}
+
+function clampPan() {
+  const maxPan = Math.max(0, (scaledW - innerWidth) / 2 + innerWidth * 0.18);
+  pan.x = Math.max(-maxPan, Math.min(maxPan, pan.x));
+}
+
+function render() {
+  track.style.transform = `translate(${pan.x}px, -50%)`;
+}
+
+function placeHotspots() {
+  document.querySelectorAll('.hotspot').forEach(el => el.remove());
+  HOTSPOTS.forEach(hs => {
+    const h = document.createElement('div');
+    h.className = 'hotspot';
+    const px = (hs.x/100) * scaledW - scaledW/2;
+    const py = (hs.y/100) * scaledH - scaledH/2;
+    h.style.left = (px) + 'px';
+    h.style.top = (py) + 'px';
+    h.style.transform = 'translate(-50%,-50%)';
+    h.addEventListener('mouseenter', e => showTip(e, hs.key));
+    h.addEventListener('mousemove', e => showTip(e, hs.key));
+    h.addEventListener('mouseleave', hideTip);
+    track.appendChild(h);
+  });
+}
+
+function showTip(e, key) {
+  const info = INFO[key];
+  if (!info) return;
+  tTitle.textContent = info.t;
+  tDesc.textContent = info.d;
+  let lx = e.clientX + 18, ly = e.clientY + 14;
+  if (lx + 290 > innerWidth) lx = e.clientX - 292;
+  tip.style.left = lx+'px'; tip.style.top = ly+'px';
+  tip.style.opacity = '1';
+}
+function hideTip() { tip.style.opacity = '0'; }
+
+stage.addEventListener('pointerdown', e => {
+  dragging = true; dragMoved = false;
+  stage.classList.add('dragging');
+  dragStartX = e.clientX;
+  panStartX = pan.x;
+  document.getElementById('dragHint').style.opacity = '0';
+});
+addEventListener('pointermove', e => {
+  if (!dragging) return;
+  const dx = e.clientX - dragStartX;
+  if (Math.abs(dx) > 3) dragMoved = true;
+  pan.x = panStartX + dx;
+  clampPan();
+  render();
+});
+addEventListener('pointerup', () => { dragging = false; stage.classList.remove('dragging'); });
+
+img.addEventListener('load', () => {
+  imgW = img.naturalWidth; imgH = img.naturalHeight;
+  layout();
+  const l = document.getElementById('loading');
+  l.style.opacity = '0';
+  setTimeout(() => l.remove(), 500);
+});
+addEventListener('resize', layout);
+setTimeout(() => {
+  const h = document.getElementById('dragHint');
+  if (h) h.style.opacity = '0';
+}, 4500);
+</script>
+</body>
+</html>
